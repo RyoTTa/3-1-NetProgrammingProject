@@ -63,6 +63,8 @@ void *recv_msg(void *arg)
 {
 	int sock=*((int*)arg);
 	char name_msg[NAME_SIZE+BUF_SIZE];
+	char opt[NAME_SIZE+BUF_SIZE];
+	char * opt_pt;
 	int str_len;
 	while(1)
 	{
@@ -70,8 +72,20 @@ void *recv_msg(void *arg)
 		if(str_len==-1)
 			return(void*)-1;
 		name_msg[str_len]=0;
-		fputs(name_msg,stdout);
-		fflush(stdout);
+
+		strcpy(opt,name_msg);
+		opt[7]='\0';
+		opt_pt=&name_msg[7];
+		if(strcmp(opt,"*#205*#")==0){
+			if(strcmp(opt_pt,"clear")==0){
+				system("clear");
+			}
+			fflush(stdout);
+		}
+		else{
+			fputs(name_msg,stdout);
+			fflush(stdout);
+		}
 	}
 	return NULL;
 }
