@@ -22,7 +22,8 @@ void server_init();		//서버 시작시 초기화
 int login(int clnt_sock,char *clnt_id);	//로그인
 int sign_up(int clnt_sock,char *clnt_id);	//회원가입
 int mail_function(int clnt_sock,char *clnt_id); //메일 기능 메뉴
-int mail_open(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);	//메일 출력
+int mail_listopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);	//메일 출력
+int mail_objectopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);
 
 void sys_write(char *buf,int clnt_sock);	//[SYSTEM] 출력
 void error_write(char *buf,int clnt_sock);	//[ERROR] 출력
@@ -41,6 +42,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_adr, clnt_adr;
 	int clnt_adr_sz;
 	pthread_t t_id;
+	
 	if(argc!=2)
 	{
 		printf("Usage : %s <port>\n",argv[0]);
@@ -202,7 +204,7 @@ int mail_function(int clnt_sock,char *clnt_id){
 	buf[read_cnt-1]='\0';
 
 	if(strcmp(buf,"1")==0){
-		mail_open(clnt_sock,clnt_id, mail_list,&mail_count,mail_folder);
+		mail_listopen(clnt_sock,clnt_id, mail_list,&mail_count,mail_folder);
 	}
 	else if(strcmp(buf,"2")==0){
 		
@@ -215,12 +217,13 @@ int mail_function(int clnt_sock,char *clnt_id){
 	}
 }
 
-int mail_open(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){	//메일 출력
+int mail_listopen(int clnt_sock,char *clnt_id, char mail_list[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){	//메일 출력
 	DIR *dir_ptr = NULL;
 	struct dirent *file = NULL;
 	FILE *fp;
 	char file_temp[MAX_LENGTH]={0,};
-	int i=0;
+	int i=0,count=0;
+	char *char_pointer=0;
 
 	sprintf(file_temp,"%s%s",".//Server//",clnt_id);
 	if((dir_ptr = opendir(file_temp)) == NULL){
@@ -230,15 +233,58 @@ int mail_open(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* m
 	while((file = readdir(dir_ptr)) != NULL){
 		if(strcmp(file->d_name,".") != 0 && strcmp(file->d_name,"..") !=0 && strcmp(file->d_name,"password.dat") != 0){
 			strcpy(mail_folder[++(*mail_count)],file->d_name);
+			for(i=0;i<=17;i++){
+				if(i==17){
+					strcpy(mail_list[*mail_count][0],file_temp);
+					memset(file_temp,0,strlen(file_temp));
+					count=0;
+				}
+				else if(mail_folder[*mail_count][i]=='$'){
+					if(count==0 || count==1){
+						file_temp[i]='/';
+						count++;
+					}
+					else if(count==2){
+						file_temp[i]=' ';
+						count++;
+					}
+					else if(count==3){
+						file_temp[i]=':';
+						count++;
+					}
+				}
+				else{
+					file_temp[i]=mail_folder[*mail_count][i];
+				}
+			}
+			for(i=17;i<=strlen(mail_folder[*mail_count]);i++){
+				if(mail_folder[*mail_count][i]=='$'){
+					strcpy(mail_list[*mail_count][1],file_temp);
+					memset(file_temp,0,strlen(file_temp));
+					count=0;
+				}
+				else if(i==strlen(mail_folder[*mail_count])){
+					file_temp[count]=mail_folder[*mail_count][i];
+					strcpy(mail_list[*mail_count][2],file_temp);
+					count=0;
+				}
+				else{
+					file_temp[count]=mail_folder[*mail_count][i];
+					count++;
+				}
+			}
 		}
 	}
+	sys_write("     Date              Sender        Title\n",clnt_sock);
 	for(i=0;i<=*mail_count;i++){
-		printf("%s\n",mail_folder[i]);
+		sprintf(file_temp,"%d :  %s %-14s %s\n",i,mail_list[i][0],mail_list[i][1],mail_list[i][2]);
+		sys_write(file_temp,clnt_sock);
 	}
-	
+	mail_objectopen(clnt_sock, clnt_id,mail_list,mail_count,mail_folder);
+}
+int mail_objectopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){
 
 }
-
 void sys_write(char *buf,int clnt_sock){
 	char temp[BUF_SIZE]={0,};
 
