@@ -5,6 +5,7 @@
 #include<arpa/inet.h>
 #include<sys/socket.h>
 #include<pthread.h>
+#include<signal.h>
 
 #define BUF_SIZE 100
 #define NAME_SIZE 20
@@ -12,16 +13,25 @@
 void *send_msg(void *arg);
 void *recv_msg(void *arg);
 void error_handling(char *msg);
+void sig_int(int signo);
 
-char name[NAME_SIZE]="[DEFAULT]";
 char msg[BUF_SIZE];
+
+int sock;
 
 int main(int argc, char *argv[])
 {
-	int sock;
+
 	struct sockaddr_in serv_addr;
 	pthread_t snd_thread, rcv_thread;
 	void *thread_return;
+	struct sigaction act;
+
+	act.sa_flags=0;
+	sigemptyset(&act.sa_mask);
+	act.sa_handler = sig_int;
+	sigaction(SIGINT,&act,0);
+
 	if(argc!=3)
 	{
 		printf("Usage : %s <IP> <port>\n",argv[0]);
@@ -50,11 +60,6 @@ void *send_msg(void *arg)
 	while(1)
 	{
 		fgets(name_msg,BUF_SIZE,stdin);
-		if(!strcmp(name_msg,"q\n")||!strcmp(name_msg,"Q\n"))
-		{
-			close(sock);
-			exit(0);
-		}
 		write(sock,name_msg,strlen(name_msg));
 	}
 	return NULL;
@@ -80,6 +85,10 @@ void *recv_msg(void *arg)
 			if(strcmp(opt_pt,"clear")==0){
 				system("clear");
 			}
+			else if(strcmp(opt_pt,"exit")==0){
+				close(sock);
+				exit(1);
+			}
 			fflush(stdout);
 		}
 		else{
@@ -94,4 +103,7 @@ void error_handling(char *msg)
 	fputs(msg,stderr);
 	fputc('\n',stderr);
 	exit(1);
+}
+void sig_int(int signo){
+	printf("\n[Error] : If you want to exit, follow the normal shutdown routine\n");
 }

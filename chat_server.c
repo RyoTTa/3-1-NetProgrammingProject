@@ -9,6 +9,9 @@
 #include<dirent.h>
 #include<sys/types.h>
 #include<sys/stat.h>
+#include<ctype.h>
+#include<time.h>
+#include<signal.h>
 
 #define BUF_SIZE 100
 #define MAX_CLNT 256
@@ -18,17 +21,17 @@
 void *handle_clnt(void *arg);
 void error_handling(char *msg);
 void server_init();		//서버 시작시 초기화
-
 int login(int clnt_sock,char *clnt_id);	//로그인
 int sign_up(int clnt_sock,char *clnt_id);	//회원가입
 int mail_function(int clnt_sock,char *clnt_id); //메일 기능 메뉴
 int mail_listopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);	//메일 출력
-int mail_objectopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);
-
+int mail_objectopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);	//메일 오픈
+int mail_send(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]);	//메일 송신
 void sys_write(char *buf,int clnt_sock);	//[SYSTEM] 출력
 void error_write(char *buf,int clnt_sock);	//[ERROR] 출력
 void opt_write(char *buf,int clnt_sock);	//clnt opt 출력
-
+void text_write(char *buf,int clnt_sock,int i); 	//text 출력
+void sig_int(int signo);	//siagction 설치
 
 pthread_mutex_t mutx;
 
@@ -42,7 +45,13 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_adr, clnt_adr;
 	int clnt_adr_sz;
 	pthread_t t_id;
-	
+	struct sigaction act;
+
+	act.sa_flags=0;
+	sigemptyset(&act.sa_mask);
+	act.sa_handler = sig_int;
+	sigaction(SIGINT,&act,0);
+
 	if(argc!=2)
 	{
 		printf("Usage : %s <port>\n",argv[0]);
@@ -76,13 +85,18 @@ void *handle_clnt(void *arg)
 	int clnt_sock=*((int*)arg);
 	char clnt_id[MAX_ID];
 
-	if(!login(clnt_sock, clnt_id)){
-		error_handling("[SERVER] Login ERROR");
-	}
 	while(1){
-		mail_function(clnt_sock, clnt_id);
+		if(login(clnt_sock, clnt_id)==-1){
+			opt_write("exit",clnt_sock);
+			shutdown(SHUT_WR,clnt_sock);
+			return NULL;
+		}
+		while(1){
+			if(mail_function(clnt_sock, clnt_id)==-1){
+				break;
+			}
+		}
 	}
-
 
 	close(clnt_sock);
 	return NULL;
@@ -98,7 +112,9 @@ int login(int clnt_sock,char *clnt_id){
 		sleep(1);
 		opt_write("clear",clnt_sock);
 		sleep(1);
-		sys_write("1 : Login \t 2 : Sign-Up\n[COMMAND] : ",clnt_sock);
+		sys_write("1 : Login\n",clnt_sock);
+		sys_write("2 : Sign-Up \n",clnt_sock);
+		sys_write("3 : Exit\n[COMMAND] : ",clnt_sock);
 		read_cnt = read(clnt_sock,buf,sizeof(buf));
 		buf[read_cnt-1]='\0';
 		if(strcmp(buf,"1")==0){
@@ -123,12 +139,15 @@ int login(int clnt_sock,char *clnt_id){
 		else if(strcmp(buf,"2")==0){
 			sign_up(clnt_sock, clnt_id);
 		}
+		else if(strcmp(buf,"3")==0){
+			return -1;
+		}
 		else{
-			error_write("1 or 2\n",clnt_sock);
+			error_write("1,2 or 3\n",clnt_sock);
 		}
 	}
 
-	return -1;
+	return 0;
 }
 
 int sign_up(int clnt_sock,char *clnt_id){
@@ -196,25 +215,32 @@ int mail_function(int clnt_sock,char *clnt_id){
 	char mail_list[MAX_LENGTH][3][MAX_LENGTH]={0,};
 	int mail_count = -1;
 	
-	sleep(1);
-	opt_write("clear",clnt_sock);
-	sleep(1);
-	sys_write("1 : Mail Open \t 2 : Mail Send\n[COMMAND] : ",clnt_sock);
-	read_cnt = read(clnt_sock,buf,sizeof(buf));
-	buf[read_cnt-1]='\0';
+	while(1){
+		sleep(1);
+		opt_write("clear",clnt_sock);
+		sleep(1);
+		sys_write("1 : Mail Open \n",clnt_sock);
+		sys_write("2 : Mail Send \n",clnt_sock);
+		sys_write("3 : Logout\n[COMMAND] : ",clnt_sock);
+		read_cnt = read(clnt_sock,buf,sizeof(buf));
+		buf[read_cnt-1]='\0';
+		if(strcmp(buf,"1")==0){
+			mail_listopen(clnt_sock,clnt_id, mail_list,&mail_count,mail_folder);
+			mail_objectopen(clnt_sock, clnt_id,mail_list,&mail_count,mail_folder);
+		}
+		else if(strcmp(buf,"2")==0){
+			mail_send(clnt_sock, clnt_id,mail_list,&mail_count,mail_folder);
+		}
+		else if(strcmp(buf,"3")==0){
+			return -1;
+		}
+		else{
+			error_write("1, 2 or 3\n",clnt_sock);
+		}
+		mail_count = -1;
+	}
 
-	if(strcmp(buf,"1")==0){
-		mail_listopen(clnt_sock,clnt_id, mail_list,&mail_count,mail_folder);
-	}
-	else if(strcmp(buf,"2")==0){
-		
-	}
-	else if(strcmp(buf,"3")==0){
-		
-	}
-	else{
-		error_write("1, 2 or 3\n",clnt_sock);
-	}
+	return 0;
 }
 
 int mail_listopen(int clnt_sock,char *clnt_id, char mail_list[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){	//메일 출력
@@ -275,15 +301,102 @@ int mail_listopen(int clnt_sock,char *clnt_id, char mail_list[][3][MAX_LENGTH],i
 			}
 		}
 	}
+	sleep(1);
+	opt_write("clear",clnt_sock);
+	sleep(1);
 	sys_write("     Date              Sender        Title\n",clnt_sock);
 	for(i=0;i<=*mail_count;i++){
 		sprintf(file_temp,"%d :  %s %-14s %s\n",i,mail_list[i][0],mail_list[i][1],mail_list[i][2]);
 		sys_write(file_temp,clnt_sock);
 	}
-	mail_objectopen(clnt_sock, clnt_id,mail_list,mail_count,mail_folder);
+
+	return 0;
 }
 int mail_objectopen(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){
 
+	char buf[BUF_SIZE];
+	int read_cnt;
+	int file_temp;
+	int i=0;
+	FILE *fp;
+
+	sys_write("q or Q : Return to Menu\n[COMMAND] : ",clnt_sock);
+	read_cnt = read(clnt_sock,buf,sizeof(buf));
+		buf[read_cnt-1]='\0';
+
+	if(strcmp(buf,"q")==0||strcmp(buf,"Q")==0){
+	}
+	else if(atoi(buf)<=*mail_count&&atoi(buf)>=0){
+		sleep(1);
+		opt_write("clear",clnt_sock);
+		sleep(1);
+		opt_write("clear",clnt_sock);
+		sprintf(buf,"%s%s%s%s%s",".//Server//",clnt_id,"//",mail_folder[atoi(buf)],"//mail.txt");
+		fp = fopen(buf,"r");
+		while(!feof(fp)){
+			fgets(buf, BUF_SIZE, fp);
+			if(strcmp(buf,"\n")!=0)
+				text_write(buf,clnt_sock,i++);
+			memset(&buf,0,sizeof(buf));
+		}
+		sys_write("if Press any key, return back\n",clnt_sock);
+		read(clnt_sock,buf,sizeof(buf));
+	}
+	else{
+		error_write("Invaild Index\n",clnt_sock);
+	}
+	return 0;
+}
+int mail_send(int clnt_sock,char *clnt_id, char mail_lit[][3][MAX_LENGTH],int* mail_count,char mail_folder[][MAX_LENGTH]){
+
+	char buf[BUF_SIZE];
+	char send_id[MAX_ID];
+	char send_title[BUF_SIZE];
+	char send_dirname[BUF_SIZE];
+	char dirroot[BUF_SIZE];
+	int read_cnt;
+	int file_temp;
+	int i=0,count=0;
+	FILE *fp;
+	struct tm *send_time;
+	const time_t t = time(NULL);
+
+	send_time = localtime(&t);
+
+	sys_write("Receiver : ",clnt_sock);
+	read_cnt = read(clnt_sock,buf,sizeof(buf));
+	buf[read_cnt-1]='\0';
+	strcpy(send_id,buf);
+	for(i=0;i<=max_user;i++){
+		if(strcmp(send_id,id[i])==0)
+			count++;
+	}
+	if(count <=0){
+		error_write("Invalid ID\n",clnt_sock);
+		return 0;
+	}
+
+	sys_write("Title : ",clnt_sock);
+	read_cnt = read(clnt_sock,send_title,sizeof(send_title));
+	send_title[read_cnt-1]='\0';
+
+	sprintf(send_dirname,".//Server//%s//%d$%02d$%02d$%02d$%02d$%s$%s",send_id,send_time->tm_year+1900,send_time->tm_mon+1,send_time->tm_mday,send_time->tm_hour,send_time->tm_min,clnt_id,send_title);
+	mkdir(send_dirname,0776);
+	sprintf(send_dirname,"%s//mail.txt",send_dirname);
+
+	sys_write("If write \"end\" send to receiver\nContents : \n",clnt_sock);
+
+	fp = fopen(send_dirname,"w");
+	while(1){
+		read_cnt = read(clnt_sock,buf,sizeof(buf));
+		buf[read_cnt]='\0';
+		if(strcmp(buf,"end\n")==0){
+			fclose(fp);
+			break;
+		}
+		fputs(buf,fp);
+	}
+	return 0;
 }
 void sys_write(char *buf,int clnt_sock){
 	char temp[BUF_SIZE]={0,};
@@ -304,6 +417,15 @@ void opt_write(char *buf,int clnt_sock){
 
 	sprintf(temp,"%s%s","*#205*#",buf);
 	write(clnt_sock,temp,strlen(temp));
+}
+
+void text_write(char *buf,int clnt_sock,int i){
+	char temp[BUF_SIZE]={0,};
+
+	if(strlen(buf)!=0){
+		sprintf(temp,"%3d: %s",i,buf);
+		write(clnt_sock,temp,strlen(temp));
+	}
 }
 
 void server_init(){
@@ -340,3 +462,13 @@ void error_handling(char *msg)
 	exit(1);
 }
 
+void sig_int(int signo){
+	int i;
+	char buf[BUF_SIZE]="Server is shutdown!";
+
+	for(i=4;i<=MAX_CLNT;i++){
+		error_write(buf,i);
+		close(i);
+	}
+	exit(1);
+}
